@@ -46,15 +46,16 @@ class PenetrationTestReportValidator:
 
     def _extract_table_map(self, page) -> Dict[str, str]:
         """
-        Attempt to extract headers as table rows: first cell -> second cell.
+        Attempt to extract headers as table rows using extract_tables(): first cell -> second cell.
         """
         table_map = {}
-        tables = page.find_tables()
+        # extract_tables returns list of tables, each a list of rows (list of strings)
+        tables = page.extract_tables() or []
         for table in tables:
-            for row in table.rows:
-                if len(row.cells) >= 2:
-                    key = row.cells[0].extract_text() or ''
-                    val = row.cells[1].extract_text() or ''
+            for row in table:
+                if row and len(row) >= 2:
+                    key = row[0] or ''
+                    val = row[1] or ''
                     table_map[key.strip()] = val.strip()
         return table_map
 
