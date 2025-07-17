@@ -24,10 +24,13 @@ class PenetrationTestReportValidator:
 
         # Custom anchored regex for precise extraction
         self.custom_patterns = {
-            'Preliminary Date':    r'Preliminary Date\s*[:]\s*(\d{1,2}/\d{1,2}/\d{4})\b',
-            'Report Issued Date':  r'Report Issued Date\s*[:]\s*(\d{1,2}/\d{1,2}/\d{4})\b',
-            'Report Status':       r'Report Status\s*[:]\s*(Preliminary Report)\b',
-            'VA Manager':          r'(?:CIVA Manager|VA Manager)\s*[:]\s*([A-Za-z &]+?)\s*(?=\n|$)'
+            'Preliminary Date':    r'Preliminary Date\s*[:]?\s*(\d{1,2}/\d{1,2}/\d{4})\b',
+            'Report Issued Date':  r'Report Issued Date\s*[:]?\s*(\d{1,2}/\d{1,2}/\d{4})\b',
+            'Report Status':       [
+                                      r'Report Status\s*[:]?\s*(Preliminary Report)\b',
+                                      r'Report Status\s+(Preliminary Report)\b'
+                                    ],
+            'VA Manager':          r'(?:CIVA Manager|VA Manager)\s*[:]?\s*([A-Za-z &]+?)\s*(?=\n|$)'
         }
 
         # Generic fallback patterns if table extraction fails
@@ -49,7 +52,6 @@ class PenetrationTestReportValidator:
         Attempt to extract headers as table rows using extract_tables(): first cell -> second cell.
         """
         table_map = {}
-        # extract_tables returns list of tables, each a list of rows (list of strings)
         tables = page.extract_tables() or []
         for table in tables:
             for row in table:
@@ -62,24 +64,35 @@ class PenetrationTestReportValidator:
     def extract_field_value(self, page_text: str, page, field: str) -> str:
         # 1) Try table-based map
         table_map = self._extract_table_map(page)
-        if field in table_map:
+        if field in table_map and table_map[field]:
             logger.debug(f"[table] {field} -> {table_map[field]}")
             return table_map[field]
 
-        # 2) Anchored custom regex
-        if field in self.custom_patterns:
-            pat = self.custom_patterns[field]
-            m = re.search(pat, page_text, re.IGNORECASE)
+        # 2) IP Address special: grab block until next header
+        if field == 'IP Address':
+            m = re.search(r'IP Address\s*[:]?\s*([\s\S]+?)\nURL Tested', page_text)
             if m:
                 return m.group(1).strip()
 
-        # 3) Generic fallback
+        # 3) Anchored custom regex
+        pats = self.custom_patterns.get(field)
+        if pats:
+            if isinstance(pats, list):
+                for pat in pats:
+                    m = re.search(pat, page_text, re.IGNORECASE)
+                    if m:
+                        return m.group(1).strip()
+            else:
+                m = re.search(pats, page_text, re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+
+        # 4) Generic fallback
         for pat in self.generic_patterns:
             regex = pat.format(field=re.escape(field))
             m = re.search(regex, page_text, re.IGNORECASE | re.MULTILINE)
             if m:
                 val = m.group(1).strip()
-                # Trim off any following header names
                 val = re.split(r"\b(?:" + "|".join(map(re.escape, self.required_fields.keys())) + r")\b", val)[0].strip()
                 return val
 
@@ -149,7 +162,6 @@ class PenetrationTestReportValidator:
                     if typ == 'status':
                         ok, msg = validator(val, cfg['expected'])
                     else:
-                        # date/text/ip
                         ok, msg = validator(val) if typ != 'text' else validator(val, field)
 
                     results['fields'][field] = {'value': val, 'valid': ok, 'msg': msg}
