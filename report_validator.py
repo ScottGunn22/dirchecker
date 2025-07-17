@@ -61,44 +61,7 @@ class PenetrationTestReportValidator:
                     table_map[key.strip()] = val.strip()
         return table_map
 
-    def extract_field_value(self, page_text: str, page, field: str) -> str:
-        # 1) Try table-based map
-        table_map = self._extract_table_map(page)
-        if field in table_map and table_map[field]:
-            logger.debug(f"[table] {field} -> {table_map[field]}")
-            return table_map[field]
-
-        # 2) IP Address special: grab block until next header
-        if field == 'IP Address':
-            m = re.search(r'IP Address\s*[:]?\s*([\s\S]+?)\nURL Tested', page_text)
-            if m:
-                return m.group(1).strip()
-
-        # 3) Anchored custom regex
-        pats = self.custom_patterns.get(field)
-        if pats:
-            if isinstance(pats, list):
-                for pat in pats:
-                    m = re.search(pat, page_text, re.IGNORECASE)
-                    if m:
-                        return m.group(1).strip()
-            else:
-                m = re.search(pats, page_text, re.IGNORECASE)
-                if m:
-                    return m.group(1).strip()
-
-        # 4) Generic fallback
-        for pat in self.generic_patterns:
-            regex = pat.format(field=re.escape(field))
-            m = re.search(regex, page_text, re.IGNORECASE | re.MULTILINE)
-            if m:
-                val = m.group(1).strip()
-                val = re.split(r"\b(?:" + "|".join(map(re.escape, self.required_fields.keys())) + r")\b", val)[0].strip()
-                return val
-
-        return ''
-
-    def _validate_date(self, date_str: str) -> Tuple[bool, str]:
+(self, date_str: str) -> Tuple[bool, str]:
         """
         Validate date against a set of common formats via datetime.strptime
         """
