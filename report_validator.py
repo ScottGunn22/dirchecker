@@ -1,7 +1,7 @@
 import pdfplumber
 import re
 import logging
-from dateutil import parser
+from datetime import datetime
 from typing import Dict, Tuple, List
 
 # Configure logging
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class PenetrationTestReportValidator:
     """
-    Refactored PDF header validator with table extraction, dateutil parsing, and improved regex anchoring.
+    Refactored PDF header validator with table extraction and improved regex anchoring.
     """
     def __init__(self):
         # Define which fields are required and their types
@@ -85,13 +85,26 @@ class PenetrationTestReportValidator:
         return ''
 
     def _validate_date(self, date_str: str) -> Tuple[bool, str]:
+        """
+        Validate date against a set of common formats via datetime.strptime
+        """
         if not date_str:
             return False, "Date field is empty"
-        try:
-            parser.parse(date_str)
-            return True, "Valid date"
-        except Exception:
-            return False, f"Unrecognized date format: '{date_str}'"
+
+        formats = [
+            "%m/%d/%Y",  # 02/14/2025
+            "%m-%d-%Y",  # 02-14-2025
+            "%Y-%m-%d",  # 2025-02-14
+            "%Y/%m/%d",  # 2025/02/14
+        ]
+        for fmt in formats:
+            try:
+                datetime.strptime(date_str.strip(), fmt)
+                return True, f"Parsed as {fmt}"
+            except ValueError:
+                continue
+
+        return False, f"Unrecognized date format: '{date_str}'"
 
     def _validate_status(self, status_str: str, expected: str) -> Tuple[bool, str]:
         if not status_str:
@@ -112,7 +125,7 @@ class PenetrationTestReportValidator:
             return False, "No IPs found"
         bad = [ip for ip in ips if any(int(o) not in range(256) for o in ip.split('.'))]
         if bad:
-            return False, f"Out‑of‑range IPs: {', '.join(bad)}"
+            return False, f"Out-of-range IPs: {', '.join(bad)}"
         return True, f"IPs found: {', '.join(ips)}"
 
     def validate_pdf(self, pdf_path: str) -> Dict:
@@ -135,6 +148,7 @@ class PenetrationTestReportValidator:
                     if typ == 'status':
                         ok, msg = validator(val, cfg['expected'])
                     else:
+                        # date/text/ip
                         ok, msg = validator(val) if typ != 'text' else validator(val, field)
 
                     results['fields'][field] = {'value': val, 'valid': ok, 'msg': msg}
